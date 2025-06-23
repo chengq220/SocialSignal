@@ -8,8 +8,8 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      - .:/app       
-      - /app/node_modules
+      - ./socialsignal:/app
+      - /app/node_modules    
     environment:
       - WATCHPACK_POLLING=true
     command: npm start
@@ -21,7 +21,7 @@ services:
     depends_on:
       - db
     volumes:
-      - ./:/SocialSignal
+      - ./backend:/app
     environment:
       - DB_URL=${DB_URL}
       - WATCHPACK_POLLING=true
@@ -38,11 +38,6 @@ services:
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB}
-
-  client:
-    image: nginx
-    ports:
-        - 80:80
 
 volumes:
   postgres_data: 
