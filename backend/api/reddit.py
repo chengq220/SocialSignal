@@ -44,27 +44,41 @@ class Reddit():
                     subscribers = sub.subscribers
                     new_posts = 0
                     new_posts_id = []
-                    for submission in sub.new(limit=SUBMISSION_PER_SUBREDDIT): 
-                        utcPostTime = submission.created
-                        if(access_time - utcPostTime < 1800):
-                            new_posts = new_posts + 1
-                            new_posts_id.append(submission.id)
-                        else:
-                            break
+                    fetch_submission_failed = True
+                    retry_new = 0
+                    while fetch_submission_failed and retry_new < MAX_RETRY:
+                        try:
+                            for submission in sub.new(limit=SUBMISSION_PER_SUBREDDIT): 
+                                utcPostTime = submission.created
+                                if(access_time - utcPostTime < 1800):
+                                    new_posts = new_posts + 1
+                                    new_posts_id.append(submission.id)
+                                else:
+                                    break
+                        except prawcore.exceptions.TooManyRequests as e:
+                            print("429 Too Many Requests: Sleeping before retrying...")
+                            time.sleep(60)  # conservative sleep
+                            retry_new += 1 
+                        except:
+                            print("Error occured exiting")
+                    fetch_hot_submission_failed = True
                     hot_posts_id = []
-                    for hot in sub.hot(limit=SUBMISSION_PER_SUBREDDIT//2):
-                        hot_posts_id.append(hot.id)
+                    retry_hot = 0
+                    while fetch_hot_submission_failed and retry_hot < MAX_RETRY:
+                        try:
+                            for hot in sub.hot(limit=SUBMISSION_PER_SUBREDDIT//2):
+                                hot_posts_id.append(hot.id)
+                        except prawcore.exceptions.TooManyRequests as e:
+                            print("429 Too Many Requests: Sleeping before retrying...")
+                            time.sleep(60)  # conservative sleep
+                            retry_hot += 1
+                        except:
+                            print("Error occured exiting")
                     key = str(access_time) + "_" + id
                     submissions.append((key, id, subscribers, new_posts, access_time, new_posts_id, hot_posts_id))
-                    time.sleep(0.5)
-            except prawcore.exceptions.RateLimitExceeded as e:
-                print(f"API Rate Limit exceed, sleeping for {e.sleep_time} seconds")
-                time.sleep(e.sleep_time)
-            except prawcore.exceptions.TooManyRequests as e:
-                print("429 Too Many Requests: Sleeping before retrying...")
-                time.sleep(60)  # conservative sleep
+                    time.sleep(1)
             except:
-                print("Error occured exiting")
+                print("Other error occured. Exiting early")
         return submissions
     
     #Process the posts and then return it
@@ -91,7 +105,17 @@ class Reddit():
                     start = iteration * 100
                     end = min((iteration + 1) * 100, len(posts))
                     iter_posts = posts[start:end]
-                    posts_info = self.reddit.info(fullnames=iter_posts)
+                    post_info_failed = True
+                    retry_post = 0
+                    while post_info_failed and retry_post < MAX_RETRY:
+                        try:
+                            posts_info = self.reddit.info(fullnames=iter_posts)
+                            post_info_failed = False
+                        except prawcore.exceptions.TooManyRequests as e:
+                            print("429 Too Many Requests: Sleeping before retrying...")
+                            time.sleep(60)  # conservative sleep
+                            retry_post += 1
+
                     for idx, sub in enumerate(tqdm(posts_info)):
                         # Entries for the submissions
                         if not sub.selftext.strip():
@@ -101,25 +125,37 @@ class Reddit():
                         submission_key = subreddit_id + "_" + str(idx)
                         status_key = str(access_time) + "_" + submission_key
                         sentiment = self.emotion_model.query([sub.selftext.strip()])[0]
-                        sub.comments.replace_more(limit=5)
-                        for cidx, comment in enumerate(sub.comments.list()[:COMMENT_PER_SUBMISSION]):
-                            # comments for each submissions
-                            comment_sentiment = self.emotion_model.query([sub.selftext.strip()])[0]
-                            comment_key = status_key + "_" + submission_key + str(cidx)
-                            comments.append((submission_key, comment_key, comment.author.name if comment.author else "[deleted]",
-                                comment.body.strip(),
-                                comment.score,
-                                comment_sentiment,
-                                comment.created_utc))
+                        replace_failed = True
+                        retry_replace = 0
+                        while replace_failed and retry_replace < MAX_RETRY:
+                            try:
+                                sub.comments.replace_more(limit=5)
+                                replace_failed = False
+                            except prawcore.exceptions.TooManyRequests as e:
+                                print("429 Too Many Requests: Sleeping before retrying...")
+                                time.sleep(60)  # conservative sleep
+                                retry_replace += 1
+                        fetch_comment_failed = True
+                        retry_comment = 0
+                        while fetch_comment_failed and retry_comment < MAX_RETRY:
+                            try:
+                                for cidx, comment in enumerate(sub.comments.list()[:COMMENT_PER_SUBMISSION]):
+                                    # comments for each submissions
+                                    comment_sentiment = self.emotion_model.query([comment.body.strip()])[0]
+                                    comment_key = status_key + "_" + submission_key + str(cidx)
+                                    comments.append((submission_key, comment_key, comment.author.name if comment.author else "[deleted]",
+                                        comment.body.strip(),
+                                        comment.score,
+                                        comment_sentiment,
+                                        comment.created_utc))
+                                fetch_comment_failed = False
+                            except prawcore.exceptions.TooManyRequests as e:
+                                print("429 Too Many Requests: Sleeping before retrying...")
+                                time.sleep(60)  # conservative sleep
+                                retry_comment += 1
                         submissions.append((submission_key, subreddit_id, sub.name, sub.over_18, sub.selftext.strip(), sentiment, sub.created_utc))
                         submission_status.append((submission_key, status_key, sub.score, sub.upvote_ratio, sub.num_comments, access_time))
                     time.sleep(2)
-            except prawcore.exceptions.RateLimitExceeded as e:
-                print(f"API Rate Limit exceed, sleeping for {e.sleep_time} seconds")
-                time.sleep(e.sleep_time)
-            except prawcore.exceptions.TooManyRequests as e:
-                print("429 Too Many Requests: Sleeping before retrying...")
-                time.sleep(60)  # conservative sleep
             except:
                 print("Other error occured. Exiting early")
         return submissions, submission_status, comments
