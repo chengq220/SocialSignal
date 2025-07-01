@@ -1,2 +1,2 @@
 # SocialSignal
-Reddit and Twitter Trends Dashboard Using Power BI
+Reddit Trends Dashboard Using Power BI
