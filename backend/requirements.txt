@@ -1,8 +1,11 @@
 fastapi
 uvicorn[standard]
 asyncpg
+asyncio
 sqlalchemy
 python-dotenv
 pydantic>=2.0
 praw
 twikit
+sentence-transformers
+pytorch
