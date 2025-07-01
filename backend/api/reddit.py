@@ -4,6 +4,7 @@ import pandas as pd
 from encoding import TokenModel
 from tqdm import tqdm
 import os
+import prawcore.exceptions
 
 SUBREDDIT_LIMIT = 50
 SUBMISSION_PER_SUBREDDIT = 20
@@ -34,27 +35,36 @@ class Reddit():
     def getSubredditStatus(self, subreddits_path):
         submissions = []
         if subreddits_path:
-            sr = pd.read_csv(subreddits_path)
-            s_id = [f"t5_{id_s}" for id_s in sr["s_id"].to_list()]
-            subreddits = self.reddit.info(fullnames=s_id)
-            for (id, sub) in tqdm(zip(s_id, subreddits)):
-                access_time = int(time.time())
-                subscribers = sub.subscribers
-                new_posts = 0
-                new_posts_id = []
-                for submission in sub.new(limit=SUBMISSION_PER_SUBREDDIT): 
-                    utcPostTime = submission.created
-                    if(access_time - utcPostTime < 1800):
-                        new_posts = new_posts + 1
-                        new_posts_id.append(submission.id)
-                    else:
-                        break
-                hot_posts_id = []
-                for hot in sub.hot(limit=SUBMISSION_PER_SUBREDDIT//2):
-                    hot_posts_id.append(hot.id)
-                key = str(access_time) + "_" + id
-                submissions.append((key, id, subscribers, new_posts, access_time, new_posts_id, hot_posts_id))
-                time.sleep(0.5)
+            try:
+                sr = pd.read_csv(subreddits_path)
+                s_id = [f"t5_{id_s}" for id_s in sr["s_id"].to_list()]
+                subreddits = self.reddit.info(fullnames=s_id)
+                for (id, sub) in tqdm(zip(s_id, subreddits)):
+                    access_time = int(time.time())
+                    subscribers = sub.subscribers
+                    new_posts = 0
+                    new_posts_id = []
+                    for submission in sub.new(limit=SUBMISSION_PER_SUBREDDIT): 
+                        utcPostTime = submission.created
+                        if(access_time - utcPostTime < 1800):
+                            new_posts = new_posts + 1
+                            new_posts_id.append(submission.id)
+                        else:
+                            break
+                    hot_posts_id = []
+                    for hot in sub.hot(limit=SUBMISSION_PER_SUBREDDIT//2):
+                        hot_posts_id.append(hot.id)
+                    key = str(access_time) + "_" + id
+                    submissions.append((key, id, subscribers, new_posts, access_time, new_posts_id, hot_posts_id))
+                    time.sleep(0.5)
+            except prawcore.exceptions.RateLimitExceeded as e:
+                print(f"API Rate Limit exceed, sleeping for {e.sleep_time} seconds")
+                time.sleep(e.sleep_time)
+            except prawcore.exceptions.TooManyRequests as e:
+                print("429 Too Many Requests: Sleeping before retrying...")
+                time.sleep(60)  # conservative sleep
+            except:
+                print("Error occured exiting")
         return submissions
     
     #Process the posts and then return it
@@ -73,35 +83,46 @@ class Reddit():
         submission_status = []
         comments = []
         if subreddits_path:
-            sr = pd.read_csv(subreddits_path)
-            posts = self.__process_post(sr["new_post_id"], sr["hot_post_id"])
-            num_fit = (len(posts) + 99) // 100
-            for iteration in range(num_fit + 1):
-                start = iteration * 100
-                end = min((iteration + 1) * 100, len(posts))
-                iter_posts = posts[start:end]
-                posts_info = self.reddit.info(fullnames=iter_posts)
-                for idx, sub in enumerate(tqdm(posts_info)):
-                    # Entries for the submissions
-                    subreddit_id = sub.subreddit.id
-                    access_time = int(time.time())
-                    submission_key = subreddit_id + "_" + str(idx)
-                    status_key = str(access_time) + "_" + submission_key
-                    sentiment = self.emotion_model.query([sub.selftext.strip()])[0]
-                    sub.comments.replace_more(limit=None)
-                    for cidx, comment in enumerate(sub.comments.list()[:COMMENT_PER_SUBMISSION]):
-                        # comments for each submissions
-                        comment_sentiment = self.emotion_model.query([sub.selftext.strip()])[0]
-                        comment_key = status_key + "_" + submission_key + str(cidx)
-                        comments.append((submission_key, comment_key, comment.author.name if comment.author else "[deleted]",
-                            comment.body.strip(),
-                            comment.score,
-                            comment_sentiment,
-                            comment.created_utc))
-                    submissions.append((submission_key, subreddit_id, sub.name, sub.over_18, sub.selftext.strip(), sentiment, sub.created_utc))
-                    submission_status.append((submission_key, status_key, sub.score, sub.upvote_ratio, sub.num_comments, access_time))
-                time.sleep(1)
-        return submissions, submission_status, comment
+            try:
+                sr = pd.read_csv(subreddits_path)
+                posts = self.__process_post(sr["new_post_id"], sr["hot_post_id"])
+                num_fit = (len(posts) + 99) // 100
+                for iteration in range(num_fit + 1):
+                    start = iteration * 100
+                    end = min((iteration + 1) * 100, len(posts))
+                    iter_posts = posts[start:end]
+                    posts_info = self.reddit.info(fullnames=iter_posts)
+                    for idx, sub in enumerate(tqdm(posts_info)):
+                        # Entries for the submissions
+                        if not sub.selftext.strip():
+                            continue
+                        subreddit_id = sub.subreddit.id
+                        access_time = int(time.time())
+                        submission_key = subreddit_id + "_" + str(idx)
+                        status_key = str(access_time) + "_" + submission_key
+                        sentiment = self.emotion_model.query([sub.selftext.strip()])[0]
+                        sub.comments.replace_more(limit=5)
+                        for cidx, comment in enumerate(sub.comments.list()[:COMMENT_PER_SUBMISSION]):
+                            # comments for each submissions
+                            comment_sentiment = self.emotion_model.query([sub.selftext.strip()])[0]
+                            comment_key = status_key + "_" + submission_key + str(cidx)
+                            comments.append((submission_key, comment_key, comment.author.name if comment.author else "[deleted]",
+                                comment.body.strip(),
+                                comment.score,
+                                comment_sentiment,
+                                comment.created_utc))
+                        submissions.append((submission_key, subreddit_id, sub.name, sub.over_18, sub.selftext.strip(), sentiment, sub.created_utc))
+                        submission_status.append((submission_key, status_key, sub.score, sub.upvote_ratio, sub.num_comments, access_time))
+                    time.sleep(2)
+            except prawcore.exceptions.RateLimitExceeded as e:
+                print(f"API Rate Limit exceed, sleeping for {e.sleep_time} seconds")
+                time.sleep(e.sleep_time)
+            except prawcore.exceptions.TooManyRequests as e:
+                print("429 Too Many Requests: Sleeping before retrying...")
+                time.sleep(60)  # conservative sleep
+            except:
+                print("Other error occured. Exiting early")
+        return submissions, submission_status, comments
 
 if __name__ == "__main__":
     reddit = Reddit()
