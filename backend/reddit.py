@@ -4,22 +4,15 @@ from encoding import TokenModel
 from tqdm import tqdm
 import os
 import prawcore.exceptions
-from datetime import datetime
-from fastapi import FastAPI, HTTPException, status
-from fastapi.middleware.cors import CORSMiddleware
-from contextlib import asynccontextmanager
-from database import DBManager
-import migration as migrate
+from datetime import datetime, timedelta
+from backend.database.database import DBManager
+import backend.database.migration as migrate
+import backend.database.query as dq
 import asyncio
 
 SUBMISSION_PER_SUBREDDIT = 10
 COMMENT_PER_SUBMISSION = 3
 MAX_RETRY = 3
-
-origins = [
-    "http://localhost",
-    "http://localhost:3000"
-]
 
 db = DBManager()
 
@@ -45,60 +38,63 @@ class Reddit():
             if(sr.id not in seen_key):
                 subreddit.append((sr.id, sr.display_name, sr.over18, sr.public_description.strip(), category, sr.subreddit_type, created_timestamp))
                 seen_key.add(sr.id)
-        res = await migrate.populateSubreddit(db, subreddit)
+        _ = await migrate.populateSubreddit(db, subreddit)
         db.disconnect()
-        return res
         # return subreddit
     
     # Get the subreddit information at the latest time stamp
-    # async def getSubredditStatus(self, subreddits_path):
-    #     submissions = []
-    #     if subreddits_path:
-    #         try:
-    #             sr = pd.read_csv(subreddits_path)
-    #             s_id = [f"t5_{id_s}" for id_s in sr["s_id"].to_list()]
-    #             subreddits = self.reddit.info(fullnames=s_id)
-    #             for (id, sub) in tqdm(zip(s_id, subreddits)):
-    #                 access_time = int(time.time())
-    #                 subscribers = sub.subscribers
-    #                 new_posts = 0
-    #                 new_posts_id = []
-    #                 fetch_submission_failed = True
-    #                 retry_new = 0
-    #                 while fetch_submission_failed and retry_new < MAX_RETRY:
-    #                     try:
-    #                         for submission in sub.new(limit=SUBMISSION_PER_SUBREDDIT): 
-    #                             utcPostTime = submission.created
-    #                             if(access_time - utcPostTime < 1800):
-    #                                 new_posts = new_posts + 1
-    #                                 new_posts_id.append(submission.id)
-    #                             else:
-    #                                 break
-    #                     except prawcore.exceptions.TooManyRequests as e:
-    #                         print("429 Too Many Requests: Sleeping before retrying...")
-    #                         time.sleep(60)  # conservative sleep
-    #                         retry_new += 1 
-    #                     except:
-    #                         print("Error occured exiting")
-    #                 fetch_hot_submission_failed = True
-    #                 hot_posts_id = []
-    #                 retry_hot = 0
-    #                 while fetch_hot_submission_failed and retry_hot < MAX_RETRY:
-    #                     try:
-    #                         for hot in sub.hot(limit=SUBMISSION_PER_SUBREDDIT//2):
-    #                             hot_posts_id.append(hot.id)
-    #                     except prawcore.exceptions.TooManyRequests as e:
-    #                         print("429 Too Many Requests: Sleeping before retrying...")
-    #                         time.sleep(60)  # conservative sleep
-    #                         retry_hot += 1
-    #                     except:
-    #                         print("Error occured exiting")
-    #                 key = str(access_time) + "_" + id
-    #                 submissions.append((key, id, subscribers, new_posts, access_time, new_posts_id, hot_posts_id))
-    #                 time.sleep(1)
-    #         except:
-    #             print("Other error occured. Exiting early")
-    #     return submissions
+    async def getSubredditStatus(self):
+        global db
+        db.connect()
+        try:
+            sr_ids = await dq.getSubreddits()
+            s_id = [f"t5_{id_s}" for id_s in list(sr_ids)]
+            subreddits = self.reddit.info(fullnames=s_id)
+            for (id, sub) in tqdm(zip(s_id, subreddits)):
+                submissions = []
+                access_time = int(time.time())
+                access_timestamp = datetime.fromtimestamp(access_time).date()
+                subscribers = sub.subscribers
+                new_posts = 0
+                new_posts_id = []
+                fetch_submission_failed = True
+                retry_new = 0
+                while fetch_submission_failed and retry_new < MAX_RETRY:
+                    try:
+                        for submission in sub.new(limit=SUBMISSION_PER_SUBREDDIT): 
+                            utcPostTime = submission.created
+                            if(access_time - utcPostTime < 1800):
+                                new_posts = new_posts + 1
+                                new_posts_id.append(submission.id)
+                            else:
+                                break
+                    except prawcore.exceptions.TooManyRequests as e:
+                        print("429 Too Many Requests: Sleeping before retrying...")
+                        time.sleep(60)  # conservative sleep
+                        retry_new += 1 
+                    except:
+                        print("Error occured exiting")
+                fetch_hot_submission_failed = True
+                hot_posts_id = []
+                retry_hot = 0
+                while fetch_hot_submission_failed and retry_hot < MAX_RETRY:
+                    try:
+                        for hot in sub.hot(limit=SUBMISSION_PER_SUBREDDIT//2):
+                            hot_posts_id.append(hot.id)
+                    except prawcore.exceptions.TooManyRequests as e:
+                        print("429 Too Many Requests: Sleeping before retrying...")
+                        time.sleep(60)  # conservative sleep
+                        retry_hot += 1
+                    except:
+                        print("Error occured exiting")
+                key = str(access_time) + "_" + id
+                submissions.append((key, id, subscribers, new_posts, access_timestamp, new_posts_id, hot_posts_id))
+                _ = await migrate.populateSubredditStatus(submissions)
+                time.sleep(1)
+        except:
+            print("Other error occured. Exiting early")
+        db.disconnect()
+        # return 1
     
     #Process the posts and then return it
     def __process_post(self, new_posts, hot_posts):
@@ -111,77 +107,81 @@ class Reddit():
     
     # Get the hot/new posts information per subreddit
     # Get comment per posts
-    # async def getPostsPerSubreddit(self, subreddits_path):
-    #     # comments = []
-    #     if subreddits_path:
-    #         try:
-    #             sr = pd.read_csv(subreddits_path)
-    #             posts = self.__process_post(sr["new_post_id"], sr["hot_post_id"])
-    #             num_fit = (len(posts) + 99) // 100
-    #             for iteration in range(num_fit + 1):
-    #                 submissions = []
-    #                 submission_status = []
-    #                 start = iteration * 100
-    #                 end = min((iteration + 1) * 100, len(posts))
-    #                 iter_posts = posts[start:end]
-    #                 post_info_failed = True
-    #                 retry_post = 0
-    #                 while post_info_failed and retry_post < MAX_RETRY:
-    #                     try:
-    #                         posts_info = self.reddit.info(fullnames=iter_posts)
-    #                         post_info_failed = False
-    #                     except prawcore.exceptions.TooManyRequests as e:
-    #                         print("429 Too Many Requests: Sleeping before retrying...")
-    #                         time.sleep(60)  # conservative sleep
-    #                         retry_post += 1
+    async def getPostsPerSubreddit(self, subreddits_path):
+        global db
+        db.connect()
+        try:
+            rb_time = datetime.now().date()  # today's date
+            lb_time = rb_time - timedelta(days=2)  # two days ago
+            sr = await dq.getSubredditStatus(db, lb_time, rb_time) ################# Not sure if these two lines will work
+            posts = self.__process_post(sr["new_post_id"], sr["hot_post_id"])#######
+            num_fit = (len(posts) + 99) // 100
+            for iteration in range(num_fit + 1):
+                submissions = []
+                submission_status = []
+                start = iteration * 100
+                end = min((iteration + 1) * 100, len(posts))
+                iter_posts = posts[start:end]
+                post_info_failed = True
+                retry_post = 0
+                while post_info_failed and retry_post < MAX_RETRY:
+                    try:
+                        posts_info = self.reddit.info(fullnames=iter_posts)
+                        post_info_failed = False
+                    except prawcore.exceptions.TooManyRequests as e:
+                        print("429 Too Many Requests: Sleeping before retrying...")
+                        time.sleep(60)  # conservative sleep
+                        retry_post += 1
 
-    #                 for idx, sub in enumerate(tqdm(posts_info)):
-    #                     # Entries for the submissions
-    #                     if not sub.selftext.strip():
-    #                         continue
-    #                     subreddit_id = sub.subreddit.id
-    #                     access_time = int(time.time())
-    #                     submission_key = subreddit_id + "_" + str(idx)
-    #                     status_key = str(access_time) + "_" + submission_key
-    #                     sentiment = self.emotion_model.query([sub.selftext.strip()])[0]
-    #                     replace_failed = True
-    #                     retry_replace = 0
-    #                     while replace_failed and retry_replace < MAX_RETRY:
-    #                         try:
-    #                             sub.comments.replace_more(limit=5)
-    #                             replace_failed = False
-    #                         except prawcore.exceptions.TooManyRequests as e:
-    #                             print("429 Too Many Requests: Sleeping before retrying...")
-    #                             time.sleep(60)  # conservative sleep
-    #                             retry_replace += 1
-    #                     fetch_comment_failed = True
-    #                     retry_comment = 0
-    #                     comments_list = []
-    #                     while fetch_comment_failed and retry_comment < MAX_RETRY:
-    #                         try:
-    #                             for cidx, comment in enumerate(sub.comments.list()[:COMMENT_PER_SUBMISSION]):
-    #                                 # comments for each submissions
-    #                                 comment_sentiment = self.emotion_model.query([comment.body.strip()])[0]
-    #                                 comment_key = status_key + "_" + submission_key + str(cidx)
-    #                                 comments_list.append((submission_key, comment_key, comment.author.name if comment.author else "[deleted]",
-    #                                     comment.body.strip(),
-    #                                     comment.score,
-    #                                     comment_sentiment,
-    #                                     comment.created_utc))
-    #                             fetch_comment_failed = False
-    #                         except prawcore.exceptions.TooManyRequests as e:
-    #                             print("429 Too Many Requests: Sleeping before retrying...")
-    #                             time.sleep(60)  # conservative sleep
-    #                             retry_comment += 1
-    #                     _ = migrate.populateComment(db, comments_list) # populate in batches as the program runs
-    #                     submissions.append((submission_key, subreddit_id, sub.name, sub.over_18, sub.selftext.strip(), sentiment, sub.created_utc))
-    #                     submission_status.append((submission_key, status_key, sub.score, sub.upvote_ratio, sub.num_comments, access_time))
-    #                 time.sleep(2)
-    #             _ = migrate.populateSubmission(db, submissions) # populate in batches as the program runs
-    #             _ = migrate.populateSubmissionStatus(db, submission_status) # populate in batches as the program runs
-    #         except:
-    #             print("Other error occured. Exiting early")
-    #     return 0
+                for idx, sub in enumerate(tqdm(posts_info)):
+                    # Entries for the submissions
+                    if not sub.selftext.strip():
+                        continue
+                    subreddit_id = sub.subreddit.id
+                    access_time = int(time.time())
+                    acess_timestamp = datetime.fromtimestamp(access_time).date()
+                    submission_key = subreddit_id + "_" + str(idx)
+                    status_key = str(access_time) + "_" + submission_key
+                    sentiment = self.emotion_model.query([sub.selftext.strip()])[0]
+                    replace_failed = True
+                    retry_replace = 0
+                    while replace_failed and retry_replace < MAX_RETRY:
+                        try:
+                            sub.comments.replace_more(limit=5)
+                            replace_failed = False
+                        except prawcore.exceptions.TooManyRequests as e:
+                            print("429 Too Many Requests: Sleeping before retrying...")
+                            time.sleep(60)  # conservative sleep
+                            retry_replace += 1
+                    fetch_comment_failed = True
+                    retry_comment = 0
+                    comments_list = []
+                    while fetch_comment_failed and retry_comment < MAX_RETRY:
+                        try:
+                            for cidx, comment in enumerate(sub.comments.list()[:COMMENT_PER_SUBMISSION]):
+                                # comments for each submissions
+                                comment_sentiment = self.emotion_model.query([comment.body.strip()])[0]
+                                comment_key = status_key + "_" + submission_key + str(cidx)
+                                comments_list.append((submission_key, comment_key, comment.author.name if comment.author else "[deleted]",
+                                    comment.body.strip(),
+                                    comment.score,
+                                    comment_sentiment,
+                                    comment.created_utc))
+                            fetch_comment_failed = False
+                        except prawcore.exceptions.TooManyRequests as e:
+                            print("429 Too Many Requests: Sleeping before retrying...")
+                            time.sleep(60)  # conservative sleep
+                            retry_comment += 1
+                    _ = migrate.populateComment(db, comments_list) # populate in batches as the program runs
+                    submissions.append((submission_key, subreddit_id, sub.name, sub.over_18, sub.selftext.strip(), sentiment, sub.created_utc))
+                    submission_status.append((submission_key, status_key, sub.score, sub.upvote_ratio, sub.num_comments, acess_timestamp))
+                time.sleep(2)
+            _ = migrate.populateSubmission(db, submissions) # populate in batches as the program runs
+            _ = migrate.populateSubmissionStatus(db, submission_status) # populate in batches as the program runs
+        except:
+            print("Other error occured. Exiting early")
+        db.disconnect()
+        return 0
 
 if __name__ == "__main__":
     reddit = Reddit()

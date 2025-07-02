@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from apiRoutes import router
-from database import DBManager
+from backend.database.database import DBManager
 
 origins = [
     "http://localhost",

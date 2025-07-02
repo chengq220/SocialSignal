@@ -1,3 +1,6 @@
+"""
+Methods to populate the database
+"""
 async def populateSubreddit(db, subreddits):
     async with db.getPool().acquire() as connection:
         res = await connection.executemany("""
