@@ -7,6 +7,11 @@ class DBManager():
     def __init__(self):
         self.pool = None
     
+    def __new__(cls):
+        if not hasattr(cls, 'instance'):
+            cls.instance = super(DBManager, cls).__new__(cls)
+        return cls.instance
+
     async def connect(self):
         load_dotenv()
         dburl = os.getenv("DB_URL")

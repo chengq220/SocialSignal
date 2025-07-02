@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from database import DBManager
 import migration as migrate
+import asyncio
 
 SUBMISSION_PER_SUBREDDIT = 10
 COMMENT_PER_SUBMISSION = 3
@@ -21,14 +22,6 @@ origins = [
 ]
 
 db = DBManager()
-
-@asynccontextmanager
-async def lifespan(app):
-    global db
-    await db.connect()
-    yield
-    await db.disconnect()
-
 
 class Reddit():
     def __init__(self):
@@ -42,15 +35,18 @@ class Reddit():
     
     # Should only be run once to get the top 100 subreddits
     async def getSubreddit(self, top=50):
+        global db
+        db.connect()
         subreddit = []
         seen_key = set()
         for (idx, sr) in tqdm(enumerate(self.reddit.subreddits.popular(limit=top))):
             category = self.category_model.query([sr.public_description])[0]
-            created_timestamp = datetime.fromtimestamp(sr.created_utc).strftime('%Y-%m-%d')
+            created_timestamp = datetime.fromtimestamp(sr.created_utc).date()
             if(sr.id not in seen_key):
                 subreddit.append((sr.id, sr.display_name, sr.over18, sr.public_description.strip(), category, sr.subreddit_type, created_timestamp))
                 seen_key.add(sr.id)
         res = await migrate.populateSubreddit(db, subreddit)
+        db.disconnect()
         return res
         # return subreddit
     
@@ -190,7 +186,7 @@ class Reddit():
 if __name__ == "__main__":
     reddit = Reddit()
     columns = ["s_id", "name", "over18", "description", "category", "type", "created_utc"]
-    subred = reddit.getSubreddit(top=51)
+    subred = asyncio.run(reddit.getSubreddit(top=51))
     print(subred)
     # df = pd.DataFrame(subred, columns=columns).reset_index(drop=True)
     # df = df.iloc[1:]
