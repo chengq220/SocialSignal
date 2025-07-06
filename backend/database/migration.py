@@ -6,7 +6,7 @@ async def populateSubreddit(db, subreddits):
         res = await connection.executemany("""
                 INSERT INTO Subreddit VALUES (
                     $1,$2,$3,$4,
-                    $5, $6, $7); """, subreddits)
+                    $5, $6, $7, &8); """, subreddits)
     return res
 
 async def populateSubredditStatus(db, status):
@@ -22,7 +22,7 @@ async def populateSubmission(db, submissions):
         res = await connection.executemany("""
                 INSERT INTO submission VALUES (
                     $1,$2,$3,$4,
-                    $5, $6, $7); """, submissions)
+                    $5, $6, $7, $8); """, submissions)
     return res
 
 async def populateSubmissionStatus(db, status):
@@ -38,5 +38,5 @@ async def populateComment(db, comments):
         res = await connection.executemany("""
                 INSERT INTO comment VALUES (
                     $1,$2,$3,$4,
-                    $5, $6, $7); """, comments)
+                    $5, $6, $7, $&); """, comments)
     return res

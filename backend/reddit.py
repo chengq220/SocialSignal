@@ -19,11 +19,6 @@ db = DBManager()
 
 class Reddit():
     def __init__(self):
-        # self.reddit = asyncpraw.Reddit(
-        #         client_id= os.getenv("REDDIT_CLIENT_ID"),
-        #         client_secret= os.getenv("REDDIT_SECRET"),
-        #         user_agent="ReadAgent",
-        #     )
         placeholder = 0
         # self.emotion_model = TokenModel(type_info="emotion")
         # self.category_model = TokenModel(type_info="category")
@@ -47,7 +42,7 @@ class Reddit():
                     seen_key.add(sr.id)
         _ = await migrate.populateSubreddit(db, subreddit)
         await db.disconnect()
-        # return subreddit
+        return 1
     
     # Get the subreddit information at the latest time stamp
     async def getSubredditStatus(self):
@@ -58,8 +53,8 @@ class Reddit():
             ids = [item["s_id"] for item in unprocessed_ids]
             s_id = [f"t5_{id_s}" for id_s in ids]
             async with asyncpraw.Reddit(
-                        client_id= "4j5eA9rff-hGW2vh4ktNFQ",
-                        client_secret= "YYzSC02w1DyDR58oONtVbhsUJ60DsQ",
+                        client_id= os.getenv("REDDIT_CLIENT_ID"),
+                        client_secret= os.getenv("REDDIT_SECRET"),
                         user_agent="ReadAgent",
                     ) as source:
                 enum_idx = 0
@@ -112,6 +107,7 @@ class Reddit():
             print(e)
             print("Other error occured. Exiting early")
         await db.disconnect()
+        return 1 
         # return 1
     
     #Process the posts and then return it
@@ -143,8 +139,8 @@ class Reddit():
                 post_info_failed = True
                 retry_post = 0
                 async with asyncpraw.Reddit(
-                        client_id= "4j5eA9rff-hGW2vh4ktNFQ",
-                        client_secret= "YYzSC02w1DyDR58oONtVbhsUJ60DsQ",
+                        client_id= os.getenv("REDDIT_CLIENT_ID"),
+                        client_secret= os.getenv("REDDIT_SECRET"),
                         user_agent="ReadAgent",
                     ) as source:
                     while post_info_failed and retry_post < MAX_RETRY:
@@ -217,30 +213,10 @@ class Reddit():
             print(e)
             print("Other error occured. Exiting early")
         await db.disconnect()
-        return 0
+        return 1
 
 if __name__ == "__main__":
     reddit = Reddit()
-    # columns = ["s_id", "name", "over18", "description", "category", "type", "created_utc"]
-    # subred = asyncio.run(reddit.getSubreddit(top=51))
-    # print(subred)
-
+    res = asyncio.run(reddit.getSubreddit(top=11))
     res = asyncio.run(reddit.getSubredditStatus())
-
-    # columns1 = ["id", "s_id", "subscribers", "new_post_past_30minutes", "date_access_utc", "new_post_id", "hot_post_id"]
-    # status = reddit.getSubredditStatus("subreddit.csv")
-    # df1 = pd.DataFrame(status, columns=columns1).reset_index(drop=True)
-    # df1.to_csv("subreddit_status.csv")
-
-    # columns2 = ["s_id", "p_id", "title", "over18", "content", "sentiment", "created_utc"]
-    # submissions, submission_status, comment = reddit.getPostsPerSubreddit("subreddit_status.csv")
-    # df2 = pd.DataFrame(submissions, columns=columns2).reset_index(drop=True)
-    # df2.to_csv("submission.csv")
-
-    # colums3 = ["p_id", "id", "score", "upvote_ratio", "num_comments", "date_access_utc"]
-    # df3 = pd.DataFrame(submission_status, columns=colums3).reset_index(drop=True)
-    # df3.to_csv("submission_status.csv")
-
-    # columns4 = ["p_id", "c_id", "author", "body", "score", "sentiment", "created_utc"]
-    # df4 = pd.DataFrame(comment, columns=columns4).reset_index(drop=True)
-    # df4.to_csv("comment.csv")
+    res = asyncio.run(reddit.getPostsPerSubreddit())
