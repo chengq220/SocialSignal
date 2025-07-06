@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from backend.database.database import DBManager
+from database.database import DBManager
 
 router = APIRouter()
 db = DBManager()
