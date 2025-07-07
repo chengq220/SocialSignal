@@ -10,6 +10,7 @@ import database.query as dq
 import asyncio
 from summa import keywords
 import sys
+import argparse
 
 SUBMISSION_PER_SUBREDDIT = 1
 COMMENT_PER_SUBMISSION = 3
@@ -210,9 +211,20 @@ class Reddit():
             print("Other error occured. Exiting early")
         await db.disconnect()
         return 1
+    
+
+
+parser = argparse.ArgumentParser()
+parser.add_argument("-o", "--option", type=int, default=1, choices=[1,2,3],
+                     help = "1: Get most popular subrredit; 2: Get current status of popular subrredit; 3: Get submissions and comments from subreddit")
 
 if __name__ == "__main__":
     reddit = Reddit()
-    # res = asyncio.run(reddit.getSubreddit(top=11))
-    # res = asyncio.run(reddit.getSubredditStatus())
-    res = asyncio.run(reddit.getPostsPerSubreddit())
+    args = parser.parse_args()
+    if args.option:
+        if args.option == 1: 
+            res = asyncio.run(reddit.getSubreddit(top=11))
+        elif args.option == 2: 
+            res = asyncio.run(reddit.getSubredditStatus())
+        else:
+            res = asyncio.run(reddit.getPostsPerSubreddit())
