@@ -35,10 +35,12 @@ class Reddit():
                 user_agent="ReadAgent",
             ) as source:
             async for sr in source.subreddits.popular(limit=top):
-                category = self.category_model.query([sr.public_description])[0]
-                subred_keywords = [item[0] for item in keywords.keywords(sr.public_description, scores=True)[0:5]]
+                # category = self.category_model.query([sr.public_description])[0]
+                category = "test"
+                subred_keywords = ','.join(item for item in [item[0] for item in keywords.keywords(sr.public_description, scores=True)[0:5]])
                 if(sr.id not in seen_key):
-                    subreddit.append((sr.id, sr.display_name, sr.over18, sr.public_description.strip(), category, sr.subreddit_type, subred_keywords, sr.created_utc))
+                    dttime = datetime.fromtimestamp(sr.created_utc).date()
+                    subreddit.append((sr.id, sr.display_name, sr.over18, sr.public_description.strip(), category, sr.subreddit_type, dttime, subred_keywords))
                     seen_key.add(sr.id)
         _ = await migrate.populateSubreddit(db, subreddit)
         await db.disconnect()
@@ -59,7 +61,7 @@ class Reddit():
                     ) as source:
                 enum_idx = 0
                 async for sub in source.info(fullnames=s_id):
-                    submissions = []
+                    # submissions = []
                     cur_s_id = s_id[enum_idx]
                     access_time = int(time.time())
                     access_timestamp = datetime.fromtimestamp(access_time).date()
@@ -70,16 +72,17 @@ class Reddit():
                     retry_new = 0
                     while fetch_submission_failed and retry_new < MAX_RETRY:
                         try:
-                            for submission in sub.new(limit=SUBMISSION_PER_SUBREDDIT): 
+                            async for submission in sub.new(limit=SUBMISSION_PER_SUBREDDIT): 
                                 utcPostTime = submission.created
                                 if(access_time - utcPostTime < 1800):
                                     new_posts = new_posts + 1
                                     new_posts_id.append(submission.id)
                                 else:
                                     break
+                            fetch_submission_failed = False
                         except asyncprawcore.exceptions.TooManyRequests as e:
                             print("429 Too Many Requests: Sleeping before retrying...")
-                            time.sleep(60)  # conservative sleep
+                            time.sleep(10)  # conservative sleep
                             retry_new += 1 
                         except:
                             print("Error occured exiting")
@@ -88,18 +91,21 @@ class Reddit():
                     retry_hot = 0
                     while fetch_hot_submission_failed and retry_hot < MAX_RETRY:
                         try:
-                            for hot in sub.hot(limit=SUBMISSION_PER_SUBREDDIT//2):
+                            async for hot in sub.hot(limit=SUBMISSION_PER_SUBREDDIT//2):
                                 hot_posts_id.append(hot.id)
+                            fetch_hot_submission_failed = False
                         except asyncprawcore.exceptions.TooManyRequests as e:
                             print("429 Too Many Requests: Sleeping before retrying...")
-                            time.sleep(60)  # conservative sleep
+                            time.sleep(10)  # conservative sleep
                             retry_hot += 1
                         except:
                             print("Error occured exiting")
                     key = str(access_time) + "_" + cur_s_id
-                    submissions.append((key, cur_s_id, subscribers, new_posts, access_timestamp, new_posts_id, hot_posts_id))
-                    _ = await migrate.populateSubredditStatus(submissions)
+                    new_posts_id = ','.join(item for item in new_posts_id)
+                    hot_posts_id = ','.join(item for item in hot_posts_id)
+                    entry = [(key, cur_s_id, subscribers, new_posts, access_timestamp, new_posts_id, hot_posts_id)]
                     enum_idx = enum_idx + 1
+                    _ = await migrate.populateSubredditStatus(db, entry)
                     time.sleep(1)
         except KeyboardInterrupt:
                 sys.exit()
@@ -128,6 +134,7 @@ class Reddit():
             rb_time = datetime.now().date()  # today's date
             lb_time = rb_time - timedelta(days=2)  # two days ago
             sr = await dq.getSubredditStatus(db, lb_time, rb_time) ################# Not sure if these two lines will work
+            print(type(sr))
             posts = self.__process_post(sr["new_post_id"], sr["hot_post_id"])#######
             num_fit = (len(posts) + 99) // 100
             for iteration in range(num_fit + 1):
@@ -149,10 +156,10 @@ class Reddit():
                             post_info_failed = False
                         except asyncprawcore.exceptions.TooManyRequests as e:
                             print("429 Too Many Requests: Sleeping before retrying...")
-                            time.sleep(60)  # conservative sleep
+                            time.sleep(10)  # conservative sleep
                             retry_post += 1
                     idx = 0
-                    for sub in posts_info:
+                    async for sub in posts_info:
                         # Entries for the submissions
                         if not sub.selftext.strip():
                             continue
@@ -175,33 +182,35 @@ class Reddit():
                                 replace_failed = False
                             except asyncprawcore.exceptions.TooManyRequests as e:
                                 print("429 Too Many Requests: Sleeping before retrying...")
-                                time.sleep(60)  # conservative sleep
+                                time.sleep(10)  # conservative sleep
                                 retry_replace += 1
                         fetch_comment_failed = True
                         retry_comment = 0
                         comments_list = []
                         while fetch_comment_failed and retry_comment < MAX_RETRY:
                             try:
-                                for cidx, comment in enumerate(sub.comments.list()[:COMMENT_PER_SUBMISSION]):
+                                cidx = 0
+                                for comment in sub.comments.list()[:COMMENT_PER_SUBMISSION]:
                                     # comments for each submissions
                                     # comment_sentiment = self.emotion_model.query([comment.body.strip()])[0]
                                     comment_sentiment = "sad"
                                     comment_key = status_key + "_" + submission_key + str(cidx)
-                                    comment_keywords = [item[0] for item in keywords.keywords(comment.body.strip(), scores=True)[0:5]]
+                                    comment_keywords =  ','.join(item for item in [item[0] for item in keywords.keywords(comment.body.strip(), scores=True)[0:5]])
                                     comments_list.append((submission_key, comment_key, comment.author.name if comment.author else "[deleted]",
                                         comment.body.strip(),
                                         comment.score,
-                                        comment_keywords,
                                         comment_sentiment,
-                                        comment.created_utc))
+                                        datetime.fromtimestamp(comment.created_utc).date(),
+                                        comment_keywords))
+                                    cidx = cidx + 1
                                 fetch_comment_failed = False
                             except asyncprawcore.exceptions.TooManyRequests as e:
                                 print("429 Too Many Requests: Sleeping before retrying...")
-                                time.sleep(60)  # conservative sleep
+                                time.sleep(10)  # conservative sleep
                                 retry_comment += 1
                         _ = migrate.populateComment(db, comments_list) # populate in batches as the program runs
-                        submission_keyword = [item[0] for item in keywords.keywords(sub.selftext.strip(), scores=True)[0:5]]
-                        submissions.append((submission_key, subreddit_id, sub.name, sub.over_18, sub.selftext.strip(), sentiment, submission_keyword, sub.created_utc))
+                        submission_keyword =  ','.join(item for item in[item[0] for item in keywords.keywords(sub.selftext.strip(), scores=True)[0:5]])
+                        submissions.append((submission_key, subreddit_id, sub.name, sub.over_18, sub.selftext.strip(), sentiment, datetime.fromtimestamp(sub.created_utc).date(), submission_keyword))
                         submission_status.append((submission_key, status_key, sub.score, sub.upvote_ratio, sub.num_comments, acess_timestamp))
                         idx = idx + 1
                     time.sleep(2)
@@ -217,6 +226,6 @@ class Reddit():
 
 if __name__ == "__main__":
     reddit = Reddit()
-    res = asyncio.run(reddit.getSubreddit(top=11))
+    # res = asyncio.run(reddit.getSubreddit(top=11))
     res = asyncio.run(reddit.getSubredditStatus())
-    res = asyncio.run(reddit.getPostsPerSubreddit())
+    # res = asyncio.run(reddit.getPostsPerSubreddit())
