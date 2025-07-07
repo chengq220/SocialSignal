@@ -1,6 +1,6 @@
 import asyncpraw 
 import time
-# from encoding import TokenModel
+from encoding import TokenModel
 import os
 import asyncprawcore.exceptions
 from datetime import datetime, timedelta
@@ -14,14 +14,14 @@ import sys
 SUBMISSION_PER_SUBREDDIT = 1
 COMMENT_PER_SUBMISSION = 3
 MAX_RETRY = 3
+NUM_KEYWORD = 5
 
 db = DBManager()
 
 class Reddit():
     def __init__(self):
-        placeholder = 0
-        # self.emotion_model = TokenModel(type_info="emotion")
-        # self.category_model = TokenModel(type_info="category")
+        self.emotion_model = TokenModel(type_info="emotion")
+        self.category_model = TokenModel(type_info="category")
     
     # Should only be run once to get the top 100 subreddits
     async def getSubreddit(self, top=50):
@@ -35,9 +35,8 @@ class Reddit():
                 user_agent="ReadAgent",
             ) as source:
             async for sr in source.subreddits.popular(limit=top):
-                # category = self.category_model.query([sr.public_description])[0]
-                category = "test"
-                subred_keywords = ','.join(item for item in [item[0] for item in keywords.keywords(sr.public_description, scores=True)[0:5]])
+                category = self.category_model.query([sr.public_description])[0]
+                subred_keywords = ','.join(item for item in [item[0] for item in keywords.keywords(sr.public_description, scores=True)[0:NUM_KEYWORD]])
                 if(sr.id not in seen_key):
                     dttime = datetime.fromtimestamp(sr.created_utc).date()
                     subreddit.append((sr.id, sr.display_name, sr.over18, sr.public_description.strip(), category, sr.subreddit_type, dttime, subred_keywords))
@@ -61,7 +60,6 @@ class Reddit():
                     ) as source:
                 enum_idx = 0
                 async for sub in source.info(fullnames=s_id):
-                    # submissions = []
                     cur_s_id = s_id[enum_idx]
                     access_time = int(time.time())
                     access_timestamp = datetime.fromtimestamp(access_time).date()
@@ -114,16 +112,6 @@ class Reddit():
             print("Other error occured. Exiting early")
         await db.disconnect()
         return 1 
-        # return 1
-    
-    #Process the posts and then return it
-    def __process_post(self, new_posts, hot_posts):
-            new_posts_id = [id_s[2:len(id_s)-2].split("', '") for id_s in new_posts.to_list()]
-            flatten_new = ["t3_"+x for xs in new_posts_id for x in xs if x]
-            hot_posts_id = [id_s[2:len(id_s)-2].split("', '") for id_s in hot_posts.to_list()]
-            flatten_hot = ["t3_"+x  for xs in hot_posts_id for x in xs if x]
-            posts = flatten_new + flatten_hot
-            return posts 
     
     # Get the hot/new posts information per subreddit
     # Get comment per posts
@@ -133,11 +121,12 @@ class Reddit():
         try:
             rb_time = datetime.now().date()  # today's date
             lb_time = rb_time - timedelta(days=2)  # two days ago
-            sr = await dq.getSubredditStatus(db, lb_time, rb_time) ################# Not sure if these two lines will work
-            print(type(sr))
-            posts = self.__process_post(sr["new_post_id"], sr["hot_post_id"])#######
+            unprocessed_ids = await dq.getSubredditStatus(db, lb_time, rb_time) ################# Not sure if these two lines will work
+            new_ids = ["t3_" + item["new_post_id"] for item in unprocessed_ids if item["new_post_id"]]
+            hot_ids = ["t3_" + item["hot_post_id"] for item in unprocessed_ids if item["hot_post_id"]]
+            posts = new_ids + hot_ids
             num_fit = (len(posts) + 99) // 100
-            for iteration in range(num_fit + 1):
+            for iteration in range(num_fit):
                 submissions = []
                 submission_status = []
                 start = iteration * 100
@@ -172,8 +161,7 @@ class Reddit():
                         acess_timestamp = datetime.fromtimestamp(access_time).date()
                         submission_key = subreddit_id + "_" + str(idx)
                         status_key = str(access_time) + "_" + submission_key
-                        # sentiment = self.emotion_model.query([sub.selftext.strip()])[0]
-                        sentiment = "sad"
+                        sentiment = self.emotion_model.query([sub.selftext.strip()])[0]
                         replace_failed = True
                         retry_replace = 0
                         while replace_failed and retry_replace < MAX_RETRY:
@@ -192,10 +180,9 @@ class Reddit():
                                 cidx = 0
                                 for comment in sub.comments.list()[:COMMENT_PER_SUBMISSION]:
                                     # comments for each submissions
-                                    # comment_sentiment = self.emotion_model.query([comment.body.strip()])[0]
-                                    comment_sentiment = "sad"
+                                    comment_sentiment = self.emotion_model.query([comment.body.strip()])[0]
                                     comment_key = status_key + "_" + submission_key + str(cidx)
-                                    comment_keywords =  ','.join(item for item in [item[0] for item in keywords.keywords(comment.body.strip(), scores=True)[0:5]])
+                                    comment_keywords =  ','.join(item for item in [item[0] for item in keywords.keywords(comment.body.strip(), scores=True)[0:NUM_KEYWORD]])
                                     comments_list.append((submission_key, comment_key, comment.author.name if comment.author else "[deleted]",
                                         comment.body.strip(),
                                         comment.score,
@@ -208,14 +195,14 @@ class Reddit():
                                 print("429 Too Many Requests: Sleeping before retrying...")
                                 time.sleep(10)  # conservative sleep
                                 retry_comment += 1
-                        _ = migrate.populateComment(db, comments_list) # populate in batches as the program runs
-                        submission_keyword =  ','.join(item for item in[item[0] for item in keywords.keywords(sub.selftext.strip(), scores=True)[0:5]])
+                        _ = await migrate.populateComment(db, comments_list) # populate in batches as the program runs
+                        submission_keyword =  ','.join(item for item in[item[0] for item in keywords.keywords(sub.selftext.strip(), scores=True)[0:NUM_KEYWORD]])
                         submissions.append((submission_key, subreddit_id, sub.name, sub.over_18, sub.selftext.strip(), sentiment, datetime.fromtimestamp(sub.created_utc).date(), submission_keyword))
                         submission_status.append((submission_key, status_key, sub.score, sub.upvote_ratio, sub.num_comments, acess_timestamp))
                         idx = idx + 1
                     time.sleep(2)
-                _ = migrate.populateSubmission(db, submissions) # populate in batches as the program runs
-                _ = migrate.populateSubmissionStatus(db, submission_status) # populate in batches as the program runs
+                _ = await migrate.populateSubmission(db, submissions) # populate in batches as the program runs
+                _ = await migrate.populateSubmissionStatus(db, submission_status) # populate in batches as the program runs
         except KeyboardInterrupt:
             sys.exit()
         except Exception as e:
@@ -227,5 +214,5 @@ class Reddit():
 if __name__ == "__main__":
     reddit = Reddit()
     # res = asyncio.run(reddit.getSubreddit(top=11))
-    res = asyncio.run(reddit.getSubredditStatus())
-    # res = asyncio.run(reddit.getPostsPerSubreddit())
+    # res = asyncio.run(reddit.getSubredditStatus())
+    res = asyncio.run(reddit.getPostsPerSubreddit())
