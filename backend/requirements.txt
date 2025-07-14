@@ -6,3 +6,5 @@ sqlalchemy
 python-dotenv
 asyncpraw
 summa
+sentence-transformers
+torch

@@ -211,13 +211,10 @@ class Reddit():
             print("Other error occured. Exiting early")
         await db.disconnect()
         return 1
-    
-
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-o", "--option", type=int, default=1, choices=[1,2,3],
-                     help = "1: Get most popular subrredit; 2: Get current status of popular subrredit; 3: Get submissions and comments from subreddit")
-
+                     help = "1: Get most popular subrredit\n2: Get current status of popular subrredit\n3: Get submissions and comments from subreddit")
 if __name__ == "__main__":
     reddit = Reddit()
     args = parser.parse_args()
