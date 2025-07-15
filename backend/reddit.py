@@ -102,7 +102,7 @@ class Reddit():
                     key = str(access_time) + "_" + cur_s_id
                     new_posts_id = ','.join(item for item in new_posts_id)
                     hot_posts_id = ','.join(item for item in hot_posts_id)
-                    entry = [(key, cur_s_id, subscribers, new_posts, access_timestamp, new_posts_id, hot_posts_id)]
+                    entry = [(key, cur_s_id[3:], subscribers, new_posts, access_timestamp, new_posts_id, hot_posts_id)]
                     enum_idx = enum_idx + 1
                     _ = await migrate.populateSubredditStatus(db, entry)
                     time.sleep(1)
