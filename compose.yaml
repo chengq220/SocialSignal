@@ -1,19 +1,6 @@
 version: '3.9'
 
 services:
-  frontend:
-    build:
-      context: ./socialsignal
-      dockerfile: Dockerfile
-    ports:
-      - "3000:3000"
-    volumes:
-      - ./socialsignal:/app
-      - /app/node_modules    
-    environment:
-      - WATCHPACK_POLLING=true
-    command: npm start
-
   backend:
     build:
       context: ./backend
