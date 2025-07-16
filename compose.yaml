@@ -10,6 +10,9 @@ services:
     environment:
       - DB_URL=${DB_URL}
       - WATCHPACK_POLLING=true
+    volumes:
+      - pip_cache:/tmp/pip-cache
+
     ports:
       - "8000:8000"
     env_file:
@@ -28,3 +31,4 @@ services:
 
 volumes:
   socialsignal_data: 
+  pip_cache:
