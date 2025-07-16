@@ -159,7 +159,7 @@ class Reddit():
                         subreddit_id = subreddit_obj.id
                         access_time = int(time.time())
                         acess_timestamp = datetime.fromtimestamp(access_time).date()
-                        submission_key = subreddit_id + "_" + str(idx)
+                        submission_key = subreddit_id + "_" + str(access_time) + "_" + str(idx)
                         status_key = str(access_time) + "_" + submission_key
                         sentiment = self.emotion_model.query([sub.selftext.strip()])[0]
                         replace_failed = True
