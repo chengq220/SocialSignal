@@ -3,4 +3,7 @@ WORKDIR /backend
 COPY requirements.txt ./
 RUN pip install -r requirements.txt
 COPY . .
-CMD ["uvicorn", "app:app", "--proxy-headers", "--host", "0.0.0.0", "--port", "8000","--reload"]
+RUN touch /backend/scheduler.log
+RUN apt-get update
+RUN apt-get -y install procps vim
+CMD ["python", "/backend/scheduler.py"]

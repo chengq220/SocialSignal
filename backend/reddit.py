@@ -157,7 +157,6 @@ class Reddit():
                         subreddit_obj = sub.subreddit
                         await subreddit_obj.load()
                         subreddit_id = subreddit_obj.id
-
                         access_time = int(time.time())
                         acess_timestamp = datetime.fromtimestamp(access_time).date()
                         submission_key = subreddit_id + "_" + str(idx)
@@ -196,14 +195,14 @@ class Reddit():
                                 print("429 Too Many Requests: Sleeping before retrying...")
                                 time.sleep(10)  # conservative sleep
                                 retry_comment += 1
-                        _ = await migrate.populateComment(db, comments_list) # populate in batches as the program runs
                         submission_keyword =  ','.join(item for item in[item[0] for item in keywords.keywords(sub.selftext.strip(), scores=True)[0:NUM_KEYWORD]])
-                        submissions.append((submission_key, subreddit_id, sub.name, sub.over_18, sub.selftext.strip(), sentiment, datetime.fromtimestamp(sub.created_utc).date(), submission_keyword))
+                        submissions.append((subreddit_id, submission_key, sub.name, sub.over_18, sub.selftext.strip(), sentiment, datetime.fromtimestamp(sub.created_utc).date(), submission_keyword))
                         submission_status.append((submission_key, status_key, sub.score, sub.upvote_ratio, sub.num_comments, acess_timestamp))
                         idx = idx + 1
                     time.sleep(2)
                 _ = await migrate.populateSubmission(db, submissions) # populate in batches as the program runs
                 _ = await migrate.populateSubmissionStatus(db, submission_status) # populate in batches as the program runs
+                _ = await migrate.populateComment(db, comments_list) # populate in batches as the program runs
         except KeyboardInterrupt:
             sys.exit()
         except Exception as e:
@@ -215,6 +214,7 @@ class Reddit():
 parser = argparse.ArgumentParser()
 parser.add_argument("-o", "--option", type=int, default=1, choices=[1,2,3],
                      help = "1: Get most popular subrredit\n2: Get current status of popular subrredit\n3: Get submissions and comments from subreddit")
+
 if __name__ == "__main__":
     reddit = Reddit()
     args = parser.parse_args()
