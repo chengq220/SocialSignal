@@ -1,6 +1,6 @@
+from reddit import Reddit
 import schedule
 import time
-import reddit
 import asyncio
 
 def job():
@@ -10,19 +10,20 @@ def job():
             _ = asyncio.run(redditrun())
             end = time.time()
             f.write(f"Starting at {start} and finished job at {end}\n")
-        except:
+        except Exception as e :
             t = time.time()
             f.write(f"Error encountered at {t}\n")
-        f.write("Starting at \n")
+            f.write(str(e))
 
 async def redditrun():
-    _ = await reddit.getSubredditStatus()
-    _ = await reddit.getPostsPerSubreddit()
+    source = Reddit()
+    _ = await source.getSubredditStatus()
+    _ = await source.getPostsPerSubreddit()
     return 1
 
 if __name__ == "__main__":
-    #schedule.every().day.at("10:30").do(job)
-    schedule.every(1).minutes.do(job)
+    schedule.every().day.at("1:00").do(job)
+    # schedule.every(1).minutes.do(job)
     while True:
         schedule.run_pending()
         time.sleep(1)
