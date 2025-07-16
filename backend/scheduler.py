@@ -22,8 +22,8 @@ async def redditrun():
     return 1
 
 if __name__ == "__main__":
-    # schedule.every().day.at("1:00").do(job)
-    schedule.every(1).minutes.do(job)
+    schedule.every().day.at("10:30").do(job)
+    #schedule.every(1).minutes.do(job)
     while True:
         schedule.run_pending()
         time.sleep(1)
