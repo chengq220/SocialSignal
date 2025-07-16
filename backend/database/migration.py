@@ -6,7 +6,7 @@ async def populateSubreddit(db, subreddits):
         res = await connection.executemany("""
                 INSERT INTO Subreddit VALUES (
                     $1, $2, $3, $4,
-                    $5, $6, $7, $8);""", subreddits)
+                    $5, $6, $7);""", subreddits)
     return res
 
 async def populateSubredditStatus(db, status):

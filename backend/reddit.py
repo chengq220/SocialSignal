@@ -1,6 +1,7 @@
 import asyncpraw 
 import time
-from encoding import TokenModel
+# from encoding import TokenModel
+from textblob import TextBlob
 import os
 import asyncprawcore.exceptions
 from datetime import datetime, timedelta
@@ -12,18 +13,14 @@ from summa import keywords
 import sys
 import argparse
 
-SUBMISSION_PER_SUBREDDIT = 1
-COMMENT_PER_SUBMISSION = 3
+SUBMISSION_PER_SUBREDDIT = 5
+COMMENT_PER_SUBMISSION = 12
 MAX_RETRY = 3
 NUM_KEYWORD = 5
 
 db = DBManager()
 
 class Reddit():
-    def __init__(self):
-        self.emotion_model = TokenModel(type_info="emotion")
-        self.category_model = TokenModel(type_info="category")
-    
     # Should only be run once to get the top 100 subreddits
     async def getSubreddit(self, top=50):
         global db
@@ -36,11 +33,10 @@ class Reddit():
                 user_agent="ReadAgent",
             ) as source:
             async for sr in source.subreddits.popular(limit=top):
-                category = self.category_model.query([sr.public_description])[0]
                 subred_keywords = ','.join(item for item in [item[0] for item in keywords.keywords(sr.public_description, scores=True)[0:NUM_KEYWORD]])
                 if(sr.id not in seen_key):
                     dttime = datetime.fromtimestamp(sr.created_utc).date()
-                    subreddit.append((sr.id, sr.display_name, sr.over18, sr.public_description.strip(), category, sr.subreddit_type, dttime, subred_keywords))
+                    subreddit.append((sr.id, sr.display_name, sr.over18, sr.public_description.strip(), sr.subreddit_type, dttime, subred_keywords))
                     seen_key.add(sr.id)
         _ = await migrate.populateSubreddit(db, subreddit)
         await db.disconnect()
@@ -161,7 +157,7 @@ class Reddit():
                         acess_timestamp = datetime.fromtimestamp(access_time).date()
                         submission_key = subreddit_id + "_" + str(access_time) + "_" + str(idx)
                         status_key = str(access_time) + "_" + submission_key
-                        sentiment = self.emotion_model.query([sub.selftext.strip()])[0]
+                        sentiment = TextBlob(sub.selftext.strip()).sentiment.polarity
                         replace_failed = True
                         retry_replace = 0
                         while replace_failed and retry_replace < MAX_RETRY:
@@ -180,7 +176,8 @@ class Reddit():
                                 cidx = 0
                                 for comment in sub.comments.list()[:COMMENT_PER_SUBMISSION]:
                                     # comments for each submissions
-                                    comment_sentiment = self.emotion_model.query([comment.body.strip()])[0]
+                                    # comment_sentiment = self.emotion_model.query([comment.body.strip()])[0]
+                                    comment_sentiment = TextBlob(comment.body.strip()).sentiment.polarity
                                     comment_key = status_key + "_" + submission_key + str(cidx)
                                     comment_keywords =  ','.join(item for item in [item[0] for item in keywords.keywords(comment.body.strip(), scores=True)[0:NUM_KEYWORD]])
                                     comments_list.append((submission_key, comment_key, comment.author.name if comment.author else "[deleted]",
@@ -221,7 +218,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     if args.option:
         if args.option == 1: 
-            res = asyncio.run(reddit.getSubreddit(top=11))
+            res = asyncio.run(reddit.getSubreddit(top=16))
         elif args.option == 2: 
             res = asyncio.run(reddit.getSubredditStatus())
         else:
