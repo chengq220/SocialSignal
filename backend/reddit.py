@@ -186,9 +186,10 @@ class Reddit():
                                     comments_list.append((submission_key, comment_key, comment.author.name if comment.author else "[deleted]",
                                         comment.body.strip(),
                                         comment.score,
+                                        comment_keywords,
                                         comment_sentiment,
-                                        datetime.fromtimestamp(comment.created_utc).date(),
-                                        comment_keywords))
+                                        datetime.fromtimestamp(comment.created_utc).date()
+                                        ))
                                     cidx = cidx + 1
                                 fetch_comment_failed = False
                             except asyncprawcore.exceptions.TooManyRequests as e:
@@ -196,7 +197,7 @@ class Reddit():
                                 time.sleep(10)  # conservative sleep
                                 retry_comment += 1
                         submission_keyword =  ','.join(item for item in[item[0] for item in keywords.keywords(sub.selftext.strip(), scores=True)[0:NUM_KEYWORD]])
-                        submissions.append((subreddit_id, submission_key, sub.name, sub.over_18, sub.selftext.strip(), sentiment, datetime.fromtimestamp(sub.created_utc).date(), submission_keyword))
+                        submissions.append((subreddit_id, submission_key, sub.name, sub.over_18, sub.selftext.strip(), sentiment, submission_keyword, datetime.fromtimestamp(sub.created_utc).date()))
                         submission_status.append((submission_key, status_key, sub.score, sub.upvote_ratio, sub.num_comments, acess_timestamp))
                         idx = idx + 1
                     time.sleep(2)
